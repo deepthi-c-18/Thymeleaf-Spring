@@ -11,18 +11,21 @@
     remote_snapshot_tar: "{{ deploy_dir }}/{{ app_name }}-snapshot.tar"
     published_port: 8080
     internal_port: 8080
-    mysql_host: "{{ mysql_host | default('host.docker.internal') }}"
+    docker_network: "{{ app_name }}-network"
+    mysql_host: "{{ mysql_host | default('mysql-db') }}"
     mysql_port: "{{ mysql_port | default('3306') }}"
     mysql_database: "{{ mysql_database | default('productdb') }}"
     mysql_user: "{{ mysql_user | default('root') }}"
     mysql_password: "{{ mysql_password | default('root') }}"
+    mysql_image: "{{ mysql_image | default('mysql:8.0') }}"
+    mysql_container: "{{ mysql_host }}"
+    mysql_volume: "{{ app_name }}-mysql-data"
     app_env:
       SPRING_DATASOURCE_URL: "jdbc:mysql://{{ mysql_host }}:{{ mysql_port }}/{{ mysql_database }}?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
       SPRING_DATASOURCE_DRIVER_CLASS_NAME: "com.mysql.cj.jdbc.Driver"
       SPRING_DATASOURCE_USERNAME: "{{ mysql_user }}"
       SPRING_DATASOURCE_PASSWORD: "{{ mysql_password }}"
       SPRING_JPA_DATABASE_PLATFORM: "org.hibernate.dialect.MySQL8Dialect"
-      SPRING_H2_CONSOLE_ENABLED: "false"
   tasks:
     - name: Ensure Docker package is installed
       package:
@@ -52,6 +55,61 @@
       command: docker load -i {{ remote_snapshot_tar }}
       changed_when: true
 
+    - name: Ensure application Docker network exists
+      command: docker network create {{ docker_network }}
+      register: create_network
+      changed_when: create_network.rc == 0
+      failed_when: create_network.rc != 0 and 'already exists' not in create_network.stderr
+
+    - name: Ensure MySQL Docker volume exists
+      command: docker volume create {{ mysql_volume }}
+      changed_when: false
+
+    - name: Remove existing MySQL container if present
+      command: docker rm -f {{ mysql_container }}
+      register: remove_mysql_container
+      changed_when: remove_mysql_container.rc == 0
+      failed_when: remove_mysql_container.rc != 0 and 'No such container' not in remove_mysql_container.stderr
+
+    - name: Start MySQL container on worker node
+      command:
+        argv:
+          - docker
+          - run
+          - -d
+          - --name
+          - "{{ mysql_container }}"
+          - --network
+          - "{{ docker_network }}"
+          - --restart
+          - always
+          - -v
+          - "{{ mysql_volume }}:/var/lib/mysql"
+          - -e
+          - "MYSQL_ROOT_PASSWORD={{ mysql_password }}"
+          - -e
+          - "MYSQL_DATABASE={{ mysql_database }}"
+          - "{{ mysql_image }}"
+
+    - name: Wait for MySQL to accept connections
+      command:
+        argv:
+          - docker
+          - exec
+          - "{{ mysql_container }}"
+          - mysqladmin
+          - ping
+          - -h
+          - "127.0.0.1"
+          - "-u{{ mysql_user }}"
+          - "-p{{ mysql_password }}"
+          - --silent
+      register: mysql_ping
+      retries: 30
+      delay: 2
+      until: mysql_ping.rc == 0
+      changed_when: false
+
     - name: Remove existing container if present
       command: docker rm -f {{ container_name }}
       register: remove_container
@@ -66,8 +124,8 @@
           - -d
           - --name
           - "{{ container_name }}"
-          - --add-host
-          - "host.docker.internal:host-gateway"
+          - --network
+          - "{{ docker_network }}"
           - --restart
           - always
           - -p
@@ -82,8 +140,6 @@
           - "SPRING_DATASOURCE_PASSWORD={{ app_env.SPRING_DATASOURCE_PASSWORD }}"
           - -e
           - "SPRING_JPA_DATABASE_PLATFORM={{ app_env.SPRING_JPA_DATABASE_PLATFORM }}"
-          - -e
-          - "SPRING_H2_CONSOLE_ENABLED={{ app_env.SPRING_H2_CONSOLE_ENABLED }}"
           - "{{ snapshot_image }}"
 
     - name: Show running application container

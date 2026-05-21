@@ -10,7 +10,7 @@ A modern, fully-featured Product Management System built with Spring Boot, Thyme
 ✅ **Search & Filter** - Search products by name and filter by category  
 ✅ **Stock Management** - Track inventory levels with low stock alerts  
 ✅ **Responsive Design** - Works seamlessly on desktop, tablet, and mobile devices  
-✅ **Data Persistence** - H2 in-memory database (easily configurable to any database)  
+✅ **Data Persistence** - MySQL database with Spring Data JPA  
 ✅ **Clean Architecture** - Separation of concerns with Controller, Service, and Repository layers  
 ✅ **Thymeleaf Templates** - Server-side template rendering with Bootstrap integration  
 
@@ -19,7 +19,7 @@ A modern, fully-featured Product Management System built with Spring Boot, Thyme
 - **Backend**: Spring Boot 3.2.0
 - **Java Version**: 17
 - **ORM**: Spring Data JPA with Hibernate
-- **Database**: H2 (in-memory database for demo)
+- **Database**: MySQL
 - **Frontend**: Thymeleaf, Bootstrap 5, Bootstrap Icons
 - **Build Tool**: Maven
 - **Additional**: Lombok, Validation API
@@ -90,13 +90,10 @@ thymeleaf-crud/
    http://localhost:8080/products
    ```
 
-5. **Access H2 Database Console (optional):**
+5. **Verify MySQL is running:**
+   ```bash
+   mysql -h localhost -P 3306 -u root -p productdb
    ```
-   http://localhost:8080/h2-console
-   ```
-   - JDBC URL: `jdbc:h2:mem:testdb`
-   - Username: `sa`
-   - Password: (leave empty)
 
 ## API Endpoints
 
@@ -176,18 +173,8 @@ The `Product` entity includes the following fields:
 
 ### Database Configuration
 
-To switch from H2 to a different database, update `application.properties`:
+This project is configured for MySQL:
 
-#### PostgreSQL Example:
-```properties
-spring.datasource.url=jdbc:postgresql://localhost:5432/productdb
-spring.datasource.username=postgres
-spring.datasource.password=password
-spring.datasource.driver-class-name=org.postgresql.Driver
-spring.jpa.database-platform=org.hibernate.dialect.PostgreSQLDialect
-```
-
-#### MySQL Example:
 ```properties
 spring.datasource.url=jdbc:mysql://localhost:3306/productdb
 spring.datasource.username=root
@@ -219,9 +206,6 @@ mvn clean install
 
 ### Spring Boot DevTools
 Enabled by default for auto-restart on file changes.
-
-### H2 Database Console
-Access at `/h2-console` to inspect the database during development.
 
 ### Lombok
 Reduces boilerplate code by auto-generating getters, setters, constructors, etc.
@@ -274,8 +258,8 @@ Change the port in `application.properties`:
 server.port=8081
 ```
 
-### H2 Database is locked
-Restart the application. H2 in-memory database resets on each restart.
+### MySQL connection refused
+Ensure MySQL is running, port `3306` is reachable, and the username/password in `application.properties` or Jenkins variables are correct.
 
 ### Validation errors not showing
 Ensure form has `th:object="${product}"` and fields use `th:field="*{fieldName}"`.

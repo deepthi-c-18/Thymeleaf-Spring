@@ -16,11 +16,15 @@ pipeline {
     SNAPSHOT_TAR = "target/${APP_NAME}-snapshot-${BUILD_NUMBER}.tar"
     ANSIBLE_INVENTORY = 'ansible/inventory.ini'
     ANSIBLE_PLAYBOOK = 'ansible/deploy_docker_worker.yml'
-    MYSQL_HOST = 'host.docker.internal'
+    MYSQL_HOST = 'mysql-db'
     MYSQL_PORT = '3306'
     MYSQL_DATABASE = 'productdb'
     MYSQL_USER = 'root'
     MYSQL_PASSWORD = 'root'
+    MYSQL_IMAGE = 'mysql:8.0'
+    MYSQL_CONTAINER = "${APP_NAME}-mysql"
+    MYSQL_VOLUME = "${APP_NAME}-mysql-data"
+    DOCKER_NETWORK = "${APP_NAME}-network"
     MASTER_PUBLISHED_PORT = '8081'
     WORKER_PUBLISHED_PORT = '8080'
   }
@@ -93,6 +97,28 @@ pipeline {
       steps {
         sh """
           docker rm -f ${MASTER_CONTAINER} || true
+          docker network inspect ${DOCKER_NETWORK} >/dev/null 2>&1 || docker network create ${DOCKER_NETWORK}
+          docker volume create ${MYSQL_VOLUME} >/dev/null
+          if ! docker ps --format '{{.Names}}' | grep -w ${MYSQL_CONTAINER} >/dev/null; then
+            docker rm -f ${MYSQL_CONTAINER} || true
+            docker run -d \\
+              --name ${MYSQL_CONTAINER} \\
+              --network ${DOCKER_NETWORK} \\
+              -v ${MYSQL_VOLUME}:/var/lib/mysql \\
+              -e MYSQL_ROOT_PASSWORD='${MYSQL_PASSWORD}' \\
+              -e MYSQL_DATABASE='${MYSQL_DATABASE}' \\
+              ${MYSQL_IMAGE}
+          fi
+          for i in \$(seq 1 30); do
+            if docker exec ${MYSQL_CONTAINER} mysqladmin ping -h 127.0.0.1 -u${MYSQL_USER} -p${MYSQL_PASSWORD} --silent; then
+              break
+            fi
+            if [ "\$i" -eq 30 ]; then
+              docker logs ${MYSQL_CONTAINER}
+              exit 1
+            fi
+            sleep 2
+          done
           if docker ps --format '{{.Ports}}' | grep -q ":${MASTER_PUBLISHED_PORT}->"; then
             echo "ERROR: Host port ${MASTER_PUBLISHED_PORT} is already used by another Docker container."
             echo "Change MASTER_PUBLISHED_PORT in Jenkinsfile or stop the container using that port."
@@ -100,14 +126,13 @@ pipeline {
           fi
           docker run -d \\
             --name ${MASTER_CONTAINER} \\
-            --add-host=host.docker.internal:host-gateway \\
+            --network ${DOCKER_NETWORK} \\
             -p ${MASTER_PUBLISHED_PORT}:8080 \\
             -e SPRING_DATASOURCE_URL='jdbc:mysql://${MYSQL_HOST}:${MYSQL_PORT}/${MYSQL_DATABASE}?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC' \\
             -e SPRING_DATASOURCE_DRIVER_CLASS_NAME='com.mysql.cj.jdbc.Driver' \\
             -e SPRING_DATASOURCE_USERNAME='${MYSQL_USER}' \\
             -e SPRING_DATASOURCE_PASSWORD='${MYSQL_PASSWORD}' \\
             -e SPRING_JPA_DATABASE_PLATFORM='org.hibernate.dialect.MySQL8Dialect' \\
-            -e SPRING_H2_CONSOLE_ENABLED='false' \\
             ${BUILD_IMAGE}
           sleep 20
           docker ps --filter "name=${MASTER_CONTAINER}" --filter "status=running" --format "{{.Names}}" | grep -w ${MASTER_CONTAINER}
@@ -131,7 +156,7 @@ pipeline {
           sshagent(credentials: ['deepthi']) {
             sh """
             ansible-playbook -i ${ANSIBLE_INVENTORY} ${ANSIBLE_PLAYBOOK} \\
-                --extra-vars "app_name=${APP_NAME} snapshot_image=${SNAPSHOT_IMAGE} snapshot_tar=${SNAPSHOT_TAR} published_port=${WORKER_PUBLISHED_PORT} mysql_host=${MYSQL_HOST} mysql_port=${MYSQL_PORT} mysql_database=${MYSQL_DATABASE} mysql_user=${MYSQL_USER} mysql_password=${MYSQL_PASSWORD}"
+                --extra-vars "app_name=${APP_NAME} snapshot_image=${SNAPSHOT_IMAGE} snapshot_tar=${SNAPSHOT_TAR} published_port=${WORKER_PUBLISHED_PORT} mysql_host=${MYSQL_HOST} mysql_port=${MYSQL_PORT} mysql_database=${MYSQL_DATABASE} mysql_user=${MYSQL_USER} mysql_password=${MYSQL_PASSWORD} mysql_image=${MYSQL_IMAGE}"
             """
           }
         }
