@@ -9,7 +9,7 @@ pipeline {
     APP_NAME = 'thymeleaf-crud'
     JAR_NAME = 'thymeleaf-crud-1.0.0.jar'
     DOCKERHUB_USER = 'deepthic18'
-    DOCKERHUB_CREDENTIALS = 'dockerhub-deepthic18'
+    DOCKERHUB_CREDENTIALS = 'deepthi123'
     BUILD_IMAGE = "${DOCKERHUB_USER}/${APP_NAME}:build-${BUILD_NUMBER}"
     SNAPSHOT_IMAGE = "${DOCKERHUB_USER}/${APP_NAME}:snapshot-${BUILD_NUMBER}"
     MASTER_CONTAINER = "${APP_NAME}-master"
@@ -46,6 +46,19 @@ pipeline {
             bat 'mvn test'
           }
         }
+      }
+    }
+
+    stage('Docker Access Check') {
+      steps {
+        sh '''
+          docker version >/dev/null 2>&1 || {
+            echo "ERROR: Jenkins cannot access Docker."
+            echo "Fix on Jenkins master: add the Jenkins runtime user to the docker group, then restart Jenkins."
+            echo "Example: sudo usermod -aG docker jenkins && sudo systemctl restart jenkins"
+            exit 1
+          }
+        '''
       }
     }
 
@@ -118,7 +131,7 @@ pipeline {
       archiveArtifacts artifacts: "target/${JAR_NAME},${SNAPSHOT_TAR}", fingerprint: true, allowEmptyArchive: true
     }
     failure {
-      sh "docker logs --tail 100 ${MASTER_CONTAINER} || true"
+      sh "docker version >/dev/null 2>&1 && docker logs --tail 100 ${MASTER_CONTAINER} || true"
     }
   }
 }
