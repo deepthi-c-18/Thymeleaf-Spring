@@ -21,6 +21,8 @@ pipeline {
     MYSQL_DATABASE = 'productdb'
     MYSQL_USER = 'root'
     MYSQL_PASSWORD = 'root'
+    MASTER_PUBLISHED_PORT = '8081'
+    WORKER_PUBLISHED_PORT = '8080'
   }
 
   stages {
@@ -91,10 +93,15 @@ pipeline {
       steps {
         sh """
           docker rm -f ${MASTER_CONTAINER} || true
+          if docker ps --format '{{.Ports}}' | grep -q ":${MASTER_PUBLISHED_PORT}->"; then
+            echo "ERROR: Host port ${MASTER_PUBLISHED_PORT} is already used by another Docker container."
+            echo "Change MASTER_PUBLISHED_PORT in Jenkinsfile or stop the container using that port."
+            exit 1
+          fi
           docker run -d \\
             --name ${MASTER_CONTAINER} \\
             --add-host=host.docker.internal:host-gateway \\
-            -p 8080:8080 \\
+            -p ${MASTER_PUBLISHED_PORT}:8080 \\
             -e SPRING_DATASOURCE_URL='jdbc:mysql://${MYSQL_HOST}:${MYSQL_PORT}/${MYSQL_DATABASE}?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC' \\
             -e SPRING_DATASOURCE_DRIVER_CLASS_NAME='com.mysql.cj.jdbc.Driver' \\
             -e SPRING_DATASOURCE_USERNAME='${MYSQL_USER}' \\
@@ -124,7 +131,7 @@ pipeline {
           sshagent(credentials: ['deepthi']) {
             sh """
             ansible-playbook -i ${ANSIBLE_INVENTORY} ${ANSIBLE_PLAYBOOK} \\
-                --extra-vars "app_name=${APP_NAME} snapshot_image=${SNAPSHOT_IMAGE} snapshot_tar=${SNAPSHOT_TAR} mysql_host=${MYSQL_HOST} mysql_port=${MYSQL_PORT} mysql_database=${MYSQL_DATABASE} mysql_user=${MYSQL_USER} mysql_password=${MYSQL_PASSWORD}"
+                --extra-vars "app_name=${APP_NAME} snapshot_image=${SNAPSHOT_IMAGE} snapshot_tar=${SNAPSHOT_TAR} published_port=${WORKER_PUBLISHED_PORT} mysql_host=${MYSQL_HOST} mysql_port=${MYSQL_PORT} mysql_database=${MYSQL_DATABASE} mysql_user=${MYSQL_USER} mysql_password=${MYSQL_PASSWORD}"
             """
           }
         }
