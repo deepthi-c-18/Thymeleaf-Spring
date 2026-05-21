@@ -8,8 +8,10 @@ pipeline {
   environment {
     APP_NAME = 'thymeleaf-crud'
     JAR_NAME = 'thymeleaf-crud-1.0.0.jar'
-    BUILD_IMAGE = "${APP_NAME}:build-${BUILD_NUMBER}"
-    SNAPSHOT_IMAGE = "${APP_NAME}:snapshot-${BUILD_NUMBER}"
+    DOCKERHUB_USER = 'deepthic18'
+    DOCKERHUB_CREDENTIALS = 'dockerhub-deepthic18'
+    BUILD_IMAGE = "${DOCKERHUB_USER}/${APP_NAME}:build-${BUILD_NUMBER}"
+    SNAPSHOT_IMAGE = "${DOCKERHUB_USER}/${APP_NAME}:snapshot-${BUILD_NUMBER}"
     MASTER_CONTAINER = "${APP_NAME}-master"
     SNAPSHOT_TAR = "target/${APP_NAME}-snapshot-${BUILD_NUMBER}.tar"
     ANSIBLE_INVENTORY = 'ansible/inventory.ini'
@@ -55,6 +57,14 @@ pipeline {
           } else {
             error 'This Jenkins deployment pipeline requires a Linux master/agent with Docker and Ansible installed.'
           }
+        }
+      }
+    }
+
+    stage('Docker Hub Login') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: "${DOCKERHUB_CREDENTIALS}", usernameVariable: 'DOCKERHUB_LOGIN_USER', passwordVariable: 'DOCKERHUB_LOGIN_PASSWORD')]) {
+          sh 'echo "$DOCKERHUB_LOGIN_PASSWORD" | docker login -u "$DOCKERHUB_LOGIN_USER" --password-stdin'
         }
       }
     }
