@@ -1,0 +1,7 @@
+target
+.git
+.gitignore
+README.md
+ansible/
+**/node_modules
+**/*.log

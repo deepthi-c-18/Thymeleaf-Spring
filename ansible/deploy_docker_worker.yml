@@ -1,0 +1,42 @@
+---
+- name: Deploy Spring Boot Docker image to worker node
+  hosts: workers
+  become: true
+  vars:
+    app_name: "{{ app_name | default('thymeleaf-crud') }}"
+    docker_image: "{{ docker_image | default('your-dockerhub-username/thymeleaf-crud:latest') }}"
+    container_name: "{{ app_name }}-container"
+    published_port: 8080
+    internal_port: 8080
+  tasks:
+    - name: Ensure Docker package is installed
+      package:
+        name:
+          - docker.io
+        state: present
+
+    - name: Ensure Docker service is started
+      service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Pull application image from Docker Hub
+      docker_image:
+        name: "{{ docker_image }}"
+        source: pull
+
+    - name: Remove existing container if present
+      docker_container:
+        name: "{{ container_name }}"
+        state: absent
+        force_kill: true
+
+    - name: Start application container on worker node
+      docker_container:
+        name: "{{ container_name }}"
+        image: "{{ docker_image }}"
+        state: started
+        restart_policy: always
+        published_ports:
+          - "{{ published_port }}:{{ internal_port }}"

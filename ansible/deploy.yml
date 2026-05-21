@@ -1,0 +1,62 @@
+---
+- name: Deploy Thymeleaf CRUD Spring Boot application
+  hosts: app_servers
+  become: true
+  vars:
+    app_name: "{{ app_name | default('thymeleaf-crud') }}"
+    deploy_dir: /opt/{{ app_name }}
+    remote_jar: "{{ deploy_dir }}/{{ app_name }}.jar"
+    jar_file: "{{ jar_file | default('target/thymeleaf-crud-1.0.0.jar') }}"
+    java_pkg:
+      - openjdk-17-jdk
+  tasks:
+    - name: Ensure deployment directory exists
+      file:
+        path: "{{ deploy_dir }}"
+        state: directory
+        owner: "{{ ansible_user | default('root') }}"
+        group: "{{ ansible_user | default('root') }}"
+        mode: '0755'
+
+    - name: Install Java 17 runtime
+      package:
+        name: "{{ java_pkg }}"
+        state: present
+
+    - name: Copy Spring Boot jar to remote host
+      copy:
+        src: "{{ jar_file }}"
+        dest: "{{ remote_jar }}"
+        mode: '0755'
+
+    - name: Create systemd service file for the app
+      copy:
+        dest: "/etc/systemd/system/{{ app_name }}.service"
+        content: |
+          [Unit]
+          Description=Spring Boot application {{ app_name }}
+          After=network.target
+
+          [Service]
+          User={{ ansible_user | default('root') }}
+          WorkingDirectory={{ deploy_dir }}
+          ExecStart=/usr/bin/java -jar {{ remote_jar }}
+          Restart=always
+          RestartSec=10
+          StandardOutput=journal
+          StandardError=journal
+
+          [Install]
+          WantedBy=multi-user.target
+      mode: '0644'
+
+    - name: Reload systemd daemon
+      command: systemctl daemon-reload
+      args:
+        warn: false
+
+    - name: Start and enable the application service
+      systemd:
+        name: "{{ app_name }}.service"
+        state: started
+        enabled: true
