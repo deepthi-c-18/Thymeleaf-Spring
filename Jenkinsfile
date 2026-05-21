@@ -22,7 +22,8 @@ pipeline {
     MYSQL_USER = 'root'
     MYSQL_PASSWORD = 'root'
     MYSQL_IMAGE = 'mysql:8.0'
-    MYSQL_CONTAINER = "${APP_NAME}-mysql"
+    MYSQL_CONTAINER = 'mysql-db'
+    LEGACY_MYSQL_CONTAINER = "${APP_NAME}-mysql"
     MYSQL_VOLUME = "${APP_NAME}-mysql-data"
     DOCKER_NETWORK = "${APP_NAME}-network"
     MASTER_PUBLISHED_PORT = '8081'
@@ -99,15 +100,21 @@ pipeline {
           docker rm -f ${MASTER_CONTAINER} || true
           docker network inspect ${DOCKER_NETWORK} >/dev/null 2>&1 || docker network create ${DOCKER_NETWORK}
           docker volume create ${MYSQL_VOLUME} >/dev/null
+          if docker ps -a --format '{{.Names}}' | grep -w ${LEGACY_MYSQL_CONTAINER} >/dev/null; then
+            docker rm -f ${LEGACY_MYSQL_CONTAINER}
+          fi
           if ! docker ps --format '{{.Names}}' | grep -w ${MYSQL_CONTAINER} >/dev/null; then
             docker rm -f ${MYSQL_CONTAINER} || true
             docker run -d \\
               --name ${MYSQL_CONTAINER} \\
               --network ${DOCKER_NETWORK} \\
+              --network-alias ${MYSQL_HOST} \\
               -v ${MYSQL_VOLUME}:/var/lib/mysql \\
               -e MYSQL_ROOT_PASSWORD='${MYSQL_PASSWORD}' \\
               -e MYSQL_DATABASE='${MYSQL_DATABASE}' \\
               ${MYSQL_IMAGE}
+          else
+            docker network connect --alias ${MYSQL_HOST} ${DOCKER_NETWORK} ${MYSQL_CONTAINER} 2>/dev/null || true
           fi
           for i in \$(seq 1 30); do
             if docker exec ${MYSQL_CONTAINER} mysqladmin ping -h 127.0.0.1 -u${MYSQL_USER} -p${MYSQL_PASSWORD} --silent; then
