@@ -16,6 +16,11 @@ pipeline {
     SNAPSHOT_TAR = "target/${APP_NAME}-snapshot-${BUILD_NUMBER}.tar"
     ANSIBLE_INVENTORY = 'ansible/inventory.ini'
     ANSIBLE_PLAYBOOK = 'ansible/deploy_docker_worker.yml'
+    MYSQL_HOST = 'host.docker.internal'
+    MYSQL_PORT = '3306'
+    MYSQL_DATABASE = 'productdb'
+    MYSQL_USER = 'root'
+    MYSQL_PASSWORD = 'root'
   }
 
   stages {
@@ -88,13 +93,14 @@ pipeline {
           docker rm -f ${MASTER_CONTAINER} || true
           docker run -d \\
             --name ${MASTER_CONTAINER} \\
+            --add-host=host.docker.internal:host-gateway \\
             -p 8080:8080 \\
-            -e SPRING_DATASOURCE_URL='jdbc:h2:mem:productdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE' \\
-            -e SPRING_DATASOURCE_DRIVER_CLASS_NAME='org.h2.Driver' \\
-            -e SPRING_DATASOURCE_USERNAME='sa' \\
-            -e SPRING_DATASOURCE_PASSWORD='' \\
-            -e SPRING_JPA_DATABASE_PLATFORM='org.hibernate.dialect.H2Dialect' \\
-            -e SPRING_H2_CONSOLE_ENABLED='true' \\
+            -e SPRING_DATASOURCE_URL='jdbc:mysql://${MYSQL_HOST}:${MYSQL_PORT}/${MYSQL_DATABASE}?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC' \\
+            -e SPRING_DATASOURCE_DRIVER_CLASS_NAME='com.mysql.cj.jdbc.Driver' \\
+            -e SPRING_DATASOURCE_USERNAME='${MYSQL_USER}' \\
+            -e SPRING_DATASOURCE_PASSWORD='${MYSQL_PASSWORD}' \\
+            -e SPRING_JPA_DATABASE_PLATFORM='org.hibernate.dialect.MySQL8Dialect' \\
+            -e SPRING_H2_CONSOLE_ENABLED='false' \\
             ${BUILD_IMAGE}
           sleep 20
           docker ps --filter "name=${MASTER_CONTAINER}" --filter "status=running" --format "{{.Names}}" | grep -w ${MASTER_CONTAINER}
@@ -117,8 +123,8 @@ pipeline {
         script {
           sshagent(credentials: ['deepthi']) {
             sh """
-              ansible-playbook -i ${ANSIBLE_INVENTORY} ${ANSIBLE_PLAYBOOK} \\
-                --extra-vars "app_name=${APP_NAME} snapshot_image=${SNAPSHOT_IMAGE} snapshot_tar=${SNAPSHOT_TAR}"
+            ansible-playbook -i ${ANSIBLE_INVENTORY} ${ANSIBLE_PLAYBOOK} \\
+                --extra-vars "app_name=${APP_NAME} snapshot_image=${SNAPSHOT_IMAGE} snapshot_tar=${SNAPSHOT_TAR} mysql_host=${MYSQL_HOST} mysql_port=${MYSQL_PORT} mysql_database=${MYSQL_DATABASE} mysql_user=${MYSQL_USER} mysql_password=${MYSQL_PASSWORD}"
             """
           }
         }

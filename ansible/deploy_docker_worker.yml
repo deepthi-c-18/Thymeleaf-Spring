@@ -11,13 +11,18 @@
     remote_snapshot_tar: "{{ deploy_dir }}/{{ app_name }}-snapshot.tar"
     published_port: 8080
     internal_port: 8080
+    mysql_host: "{{ mysql_host | default('host.docker.internal') }}"
+    mysql_port: "{{ mysql_port | default('3306') }}"
+    mysql_database: "{{ mysql_database | default('productdb') }}"
+    mysql_user: "{{ mysql_user | default('root') }}"
+    mysql_password: "{{ mysql_password | default('root') }}"
     app_env:
-      SPRING_DATASOURCE_URL: "jdbc:h2:mem:productdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE"
-      SPRING_DATASOURCE_DRIVER_CLASS_NAME: "org.h2.Driver"
-      SPRING_DATASOURCE_USERNAME: "sa"
-      SPRING_DATASOURCE_PASSWORD: ""
-      SPRING_JPA_DATABASE_PLATFORM: "org.hibernate.dialect.H2Dialect"
-      SPRING_H2_CONSOLE_ENABLED: "true"
+      SPRING_DATASOURCE_URL: "jdbc:mysql://{{ mysql_host }}:{{ mysql_port }}/{{ mysql_database }}?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: "com.mysql.cj.jdbc.Driver"
+      SPRING_DATASOURCE_USERNAME: "{{ mysql_user }}"
+      SPRING_DATASOURCE_PASSWORD: "{{ mysql_password }}"
+      SPRING_JPA_DATABASE_PLATFORM: "org.hibernate.dialect.MySQL8Dialect"
+      SPRING_H2_CONSOLE_ENABLED: "false"
   tasks:
     - name: Ensure Docker package is installed
       package:
@@ -61,6 +66,8 @@
           - -d
           - --name
           - "{{ container_name }}"
+          - --add-host
+          - "host.docker.internal:host-gateway"
           - --restart
           - always
           - -p
