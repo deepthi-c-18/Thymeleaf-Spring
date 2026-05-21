@@ -1,6 +1,10 @@
 pipeline {
   agent any
 
+  tools {
+    maven 'maven'
+  }
+
   environment {
     APP_NAME = 'thymeleaf-crud'
     JAR_NAME = 'thymeleaf-crud-1.0.0.jar'
