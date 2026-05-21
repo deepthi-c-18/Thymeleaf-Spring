@@ -1,4 +1,5 @@
-target
+target/*
+!target/thymeleaf-crud-1.0.0.jar
 .git
 .gitignore
 README.md

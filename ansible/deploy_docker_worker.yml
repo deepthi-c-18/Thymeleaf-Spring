@@ -1,13 +1,23 @@
 ---
-- name: Deploy Spring Boot Docker image to worker node
+- name: Deploy Spring Boot Docker snapshot to worker node
   hosts: workers
   become: true
   vars:
     app_name: "{{ app_name | default('thymeleaf-crud') }}"
-    docker_image: "{{ docker_image | default('your-dockerhub-username/thymeleaf-crud:latest') }}"
+    snapshot_image: "{{ snapshot_image | default('thymeleaf-crud:snapshot-latest') }}"
+    snapshot_tar: "{{ snapshot_tar | default('target/thymeleaf-crud-snapshot.tar') }}"
     container_name: "{{ app_name }}-container"
+    deploy_dir: "/opt/{{ app_name }}"
+    remote_snapshot_tar: "{{ deploy_dir }}/{{ app_name }}-snapshot.tar"
     published_port: 8080
     internal_port: 8080
+    app_env:
+      SPRING_DATASOURCE_URL: "jdbc:h2:mem:productdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE"
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: "org.h2.Driver"
+      SPRING_DATASOURCE_USERNAME: "sa"
+      SPRING_DATASOURCE_PASSWORD: ""
+      SPRING_JPA_DATABASE_PLATFORM: "org.hibernate.dialect.H2Dialect"
+      SPRING_H2_CONSOLE_ENABLED: "true"
   tasks:
     - name: Ensure Docker package is installed
       package:
@@ -21,22 +31,54 @@
         state: started
         enabled: true
 
-    - name: Pull application image from Docker Hub
-      docker_image:
-        name: "{{ docker_image }}"
-        source: pull
+    - name: Ensure deployment directory exists
+      file:
+        path: "{{ deploy_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Copy snapshot archive from Jenkins master to worker
+      copy:
+        src: "{{ snapshot_tar }}"
+        dest: "{{ remote_snapshot_tar }}"
+        mode: '0644'
+
+    - name: Load snapshot image on worker
+      command: docker load -i {{ remote_snapshot_tar }}
+      changed_when: true
 
     - name: Remove existing container if present
-      docker_container:
-        name: "{{ container_name }}"
-        state: absent
-        force_kill: true
+      command: docker rm -f {{ container_name }}
+      register: remove_container
+      changed_when: remove_container.rc == 0
+      failed_when: remove_container.rc != 0 and 'No such container' not in remove_container.stderr
 
     - name: Start application container on worker node
-      docker_container:
-        name: "{{ container_name }}"
-        image: "{{ docker_image }}"
-        state: started
-        restart_policy: always
-        published_ports:
+      command:
+        argv:
+          - docker
+          - run
+          - -d
+          - --name
+          - "{{ container_name }}"
+          - --restart
+          - always
+          - -p
           - "{{ published_port }}:{{ internal_port }}"
+          - -e
+          - "SPRING_DATASOURCE_URL={{ app_env.SPRING_DATASOURCE_URL }}"
+          - -e
+          - "SPRING_DATASOURCE_DRIVER_CLASS_NAME={{ app_env.SPRING_DATASOURCE_DRIVER_CLASS_NAME }}"
+          - -e
+          - "SPRING_DATASOURCE_USERNAME={{ app_env.SPRING_DATASOURCE_USERNAME }}"
+          - -e
+          - "SPRING_DATASOURCE_PASSWORD={{ app_env.SPRING_DATASOURCE_PASSWORD }}"
+          - -e
+          - "SPRING_JPA_DATABASE_PLATFORM={{ app_env.SPRING_JPA_DATABASE_PLATFORM }}"
+          - -e
+          - "SPRING_H2_CONSOLE_ENABLED={{ app_env.SPRING_H2_CONSOLE_ENABLED }}"
+          - "{{ snapshot_image }}"
+
+    - name: Show running application container
+      command: docker ps --filter name={{ container_name }} --filter status=running
+      changed_when: false
